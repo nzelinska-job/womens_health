@@ -1,0 +1,1 @@
+# Generator for symptoms and cycle manifestations

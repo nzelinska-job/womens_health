@@ -1,0 +1,55 @@
+# Configuration file for Kaggle datasets
+# Store all dataset information here for easy management
+
+datasets:
+  # Primary menstrual cycle dataset
+  menstrual_cycle:
+    kaggle_path: "nikitabisht/menstrual-cycle-data"
+    description: "Comprehensive menstrual cycle tracking data with symptoms and patterns"
+    local_folder: "menstrual_cycle"
+    files:
+      - "menstrual_cycle_data.csv"
+    
+  # Additional women's health datasets
+  fertility_prediction:
+    kaggle_path: "bansodesandeep/fertility-prediction-dataset"
+    description: "Fertility prediction based on lifestyle and health factors"
+    local_folder: "fertility"
+    files: []
+    
+  pcos_detection:
+    kaggle_path: "prasoonkottarathil/polycystic-ovary-syndrome-pcos"
+    description: "PCOS detection dataset with medical indicators"
+    local_folder: "pcos"
+    files: []
+    
+  pregnancy_health:
+    kaggle_path: "kumargh/pimaindiansdiabetescsv"
+    description: "Health indicators during pregnancy"
+    local_folder: "pregnancy"
+    files: []
+
+# Download settings
+download_settings:
+  # Whether to overwrite existing files
+  overwrite_existing: false
+  
+  # Create metadata files for tracking
+  create_metadata: true
+  
+  # Organize files by download date
+  organize_by_date: false
+  
+  # Verify file integrity after download
+  verify_downloads: true
+
+# Data processing settings
+processing:
+  # Automatically create processed versions
+  auto_process: false
+  
+  # Default encoding for CSV files
+  default_encoding: "utf-8"
+  
+  # Date format standardization
+  date_format: "%Y-%m-%d"
