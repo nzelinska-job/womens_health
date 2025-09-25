@@ -185,70 +185,142 @@ class CycleToDailyTransformer:
         # Follicular phase (after menstruation, before ovulation)
         return 'f'
 
-    def generate_mood(self, phase: str, cycle_day: int, cycle_length: int, age: float) -> int:
-        """Generate mood based on cycle phase and age"""
+    def generate_mood(self, phase: str, cycle_day: int, cycle_length: int, age: float,
+                      prev_mood: int = None) -> int:
+        """Generate mood based on cycle phase and age with smooth transitions"""
         if pd.isna(phase) or pd.isna(age):
             return np.random.choice([-2, -1, 0, 1, 2])
 
+        # Add noise for longer cycles
+        cycle_noise = 0
+        if cycle_length > 35:
+            cycle_noise = np.random.normal(0, 0.3)
+
         # Age factor for PMS (increases with age)
         if age <= 20:
-            pms_intensity = 0.036  # 3.6%
+            pms_intensity = 0.036 + np.random.normal(0, 0.01)
         elif age <= 25:
-            pms_intensity = 0.042
+            pms_intensity = 0.042 + np.random.normal(0, 0.01)
         elif age <= 30:
-            pms_intensity = 0.048
+            pms_intensity = 0.048 + np.random.normal(0, 0.01)
         else:
-            pms_intensity = 0.054  # 5.4%
+            pms_intensity = 0.054 + np.random.normal(0, 0.015)
 
-        # Determine if in pre-menstrual period (last 7 days of luteal phase)
-        is_premenstrual = False
-        if phase == 'l':
-            # Estimate when luteal phase started
-            luteal_days_remaining = cycle_length - cycle_day
-            if luteal_days_remaining <= 7:
-                is_premenstrual = True
-
-        if is_premenstrual:
-            # Pre-menstrual: mostly negative (75%) with some positive (25%)
-            if np.random.random() < 0.75:
-                return np.random.choice([-2, -1, 0], p=[0.3, 0.4, 0.3])
+        # Base mood calculation with smoother transitions
+        if phase == 'm':
+            # Menstrual: gradual improvement during period
+            # Improves over menstrual days
+            base_mood = -1.0 + (cycle_day - 1) * 0.3
+            base_mood = max(-2, min(0, base_mood))
+        elif phase == 'f':
+            # Follicular: steady improvement
+            days_into_phase = cycle_day - 5  # Assuming menses ~5 days
+            base_mood = 0.2 + days_into_phase * 0.15
+            base_mood = max(-1, min(1.5, base_mood))
+        elif phase == 'o':
+            # Ovulation: peak mood with slight variation
+            base_mood = 1.5 + np.random.normal(0, 0.3)
+            base_mood = max(0, min(2, base_mood))
+        else:  # luteal
+            # Luteal: gradual decline, sharp drop in last 7 days
+            # Approximate luteal start
+            luteal_day = cycle_day - (cycle_length - 14)
+            if luteal_day > 7:  # Last 7 days (premenstrual)
+                days_to_period = cycle_length - cycle_day
+                base_mood = 0.5 - (7 - days_to_period) * 0.4
+                base_mood = max(-2, min(0, base_mood))
             else:
-                return np.random.choice([1, 2], p=[0.7, 0.3])
-        elif phase in ['m', 'f']:
-            # Menstrual and follicular: mostly positive (75%)
-            if np.random.random() < 0.75:
-                return np.random.choice([0, 1, 2], p=[0.2, 0.5, 0.3])
-            else:
-                return np.random.choice([-2, -1], p=[0.3, 0.7])
-        else:
-            # Ovulation and other luteal days: balanced
-            return np.random.choice([-2, -1, 0, 1, 2], p=[0.1, 0.2, 0.4, 0.2, 0.1])
+                base_mood = 1.2 - luteal_day * 0.1
+                base_mood = max(-0.5, min(1.2, base_mood))
 
-    def generate_energy(self, phase: str) -> int:
-        """Generate energy level (-2 to 2)"""
+        # Add smooth transition from previous day
+        if prev_mood is not None:
+            transition_factor = 0.6  # 60% influence from previous day
+            base_mood = transition_factor * prev_mood + \
+                (1 - transition_factor) * base_mood
+
+        # Add daily noise
+        base_mood += np.random.normal(0, 0.4) + cycle_noise
+
+        # Convert to discrete scale and add final randomness
+        mood_value = int(np.round(base_mood))
+        mood_value = max(-2, min(2, mood_value))
+
+        # Add some final randomness (10% chance of deviation)
+        if np.random.random() < 0.1:
+            mood_value += np.random.choice([-1, 1])
+            mood_value = max(-2, min(2, mood_value))
+
+        return mood_value
+
+    def generate_energy(self, phase: str, cycle_day: int, cycle_length: int,
+                        prev_energy: int = None) -> int:
+        """Generate energy level with smooth transitions"""
         if pd.isna(phase):
             return np.random.choice([-2, -1, 0, 1, 2])
 
-        if phase == 'm':
-            # Menstrual: lower energy
-            return np.random.choice([-2, -1, 0, 1, 2], p=[0.3, 0.3, 0.3, 0.1, 0.0])
-        elif phase == 'f':
-            # Follicular: increasing energy
-            return np.random.choice([-2, -1, 0, 1, 2], p=[0.1, 0.2, 0.3, 0.3, 0.1])
-        elif phase == 'o':
-            # Ovulation: high energy
-            return np.random.choice([-2, -1, 0, 1, 2], p=[0.0, 0.1, 0.2, 0.4, 0.3])
-        else:  # luteal
-            # Luteal: decreasing energy
-            return np.random.choice([-2, -1, 0, 1, 2], p=[0.2, 0.3, 0.3, 0.2, 0.0])
+        # Add noise for longer cycles
+        cycle_noise = 0
+        if cycle_length > 35:
+            cycle_noise = np.random.normal(0, 0.2)
 
-    def generate_symptoms(self, phase: str, cycle_day: int, cycle_length: int) -> str:
-        """Generate symptoms based on cycle phase"""
+        # Base energy calculation
+        if phase == 'm':
+            # Menstrual: low but gradually improving
+            base_energy = -1.5 + (cycle_day - 1) * 0.2
+            base_energy = max(-2, min(-0.5, base_energy))
+        elif phase == 'f':
+            # Follicular: steady increase
+            days_into_phase = cycle_day - 5
+            base_energy = -0.3 + days_into_phase * 0.25
+            base_energy = max(-1, min(1.5, base_energy))
+        elif phase == 'o':
+            # Ovulation: peak energy
+            base_energy = 1.7 + np.random.normal(0, 0.25)
+            base_energy = max(1, min(2, base_energy))
+        else:  # luteal
+            # Luteal: gradual decline
+            luteal_day = cycle_day - (cycle_length - 14)
+            base_energy = 1.0 - luteal_day * 0.12
+            base_energy = max(-1.5, min(1.0, base_energy))
+
+        # Smooth transition from previous day
+        if prev_energy is not None:
+            transition_factor = 0.5
+            base_energy = transition_factor * prev_energy + \
+                (1 - transition_factor) * base_energy
+
+        # Add daily variation and cycle noise
+        base_energy += np.random.normal(0, 0.5) + cycle_noise
+
+        # Convert to discrete scale
+        energy_value = int(np.round(base_energy))
+        energy_value = max(-2, min(2, energy_value))
+
+        # Final randomness
+        if np.random.random() < 0.15:
+            energy_value += np.random.choice([-1, 1])
+            energy_value = max(-2, min(2, energy_value))
+
+        return energy_value
+
+    def generate_symptoms(self, phase: str, cycle_day: int, cycle_length: int,
+                          prev_symptoms: str = None) -> str:
+        """Generate symptoms based on cycle phase with smoother transitions"""
         symptoms_list = ['cramps', 'headache', 'breast_tenderness', 'acne',
                          'food_cravings', 'sleep_problems', 'not_defined']
 
         if pd.isna(phase):
             return np.random.choice(symptoms_list)
+
+        # Add continuity - some symptoms persist across days
+        persistent_symptoms = []
+        if prev_symptoms and prev_symptoms != 'not_defined' and np.random.random() < 0.4:
+            # 40% chance to continue some symptoms from previous day
+            prev_symptoms_list = prev_symptoms.split(
+                ', ') if ', ' in prev_symptoms else [prev_symptoms]
+            persistent_symptoms = [
+                s for s in prev_symptoms_list if np.random.random() < 0.6]
 
         # Determine if in pre-menstrual or menstrual period
         is_premenstrual = False
@@ -259,76 +331,130 @@ class CycleToDailyTransformer:
 
         is_high_symptom_period = (phase == 'm') or is_premenstrual
 
-        if is_high_symptom_period:
-            # 75% chance of symptoms during menstrual/pre-menstrual
-            if np.random.random() < 0.75:
-                # 50% chance of multiple symptoms
-                if np.random.random() < 0.5:
-                    # Multiple symptoms
-                    if phase == 'm':
-                        possible_symptoms = [
-                            'cramps', 'headache', 'sleep_problems']
-                        num_symptoms = np.random.choice([2, 3], p=[0.7, 0.3])
-                        selected_symptoms = np.random.choice(possible_symptoms,
-                                                             size=min(num_symptoms, len(
-                                                                 possible_symptoms)),
-                                                             replace=False)
-                        return ', '.join(selected_symptoms)
-                    else:  # pre-menstrual
-                        possible_symptoms = [
-                            'breast_tenderness', 'food_cravings', 'acne', 'headache']
-                        num_symptoms = np.random.choice([2, 3], p=[0.7, 0.3])
-                        selected_symptoms = np.random.choice(possible_symptoms,
-                                                             size=min(num_symptoms, len(
-                                                                 possible_symptoms)),
-                                                             replace=False)
-                        return ', '.join(selected_symptoms)
-                else:
-                    # Single symptom
-                    if phase == 'm':
-                        return np.random.choice(['cramps', 'headache', 'sleep_problems'],
-                                                p=[0.5, 0.3, 0.2])
-                    else:  # pre-menstrual
-                        return np.random.choice(['breast_tenderness', 'food_cravings', 'acne'],
-                                                p=[0.4, 0.4, 0.2])
-            else:
-                return 'not_defined'
+        # Base symptom probability with cycle length adjustment
+        base_prob = 0.75 if is_high_symptom_period else 0.25
+        if cycle_length > 35:
+            base_prob *= 1.1  # Slightly more symptoms in longer cycles
+
+        if np.random.random() < base_prob:
+            available_symptoms = []
+
+            if phase == 'm':
+                # Menstrual symptoms with day-specific probabilities
+                if cycle_day <= 2:  # Heavy flow days
+                    available_symptoms = [
+                        'cramps', 'headache', 'sleep_problems']
+                    weights = [0.6, 0.25, 0.15]
+                else:  # Lighter days
+                    available_symptoms = [
+                        'cramps', 'headache', 'sleep_problems']
+                    weights = [0.4, 0.35, 0.25]
+            elif is_premenstrual:
+                # PMS symptoms with gradual onset
+                days_to_period = cycle_length - cycle_day
+                if days_to_period <= 3:  # Very close to period
+                    available_symptoms = ['breast_tenderness',
+                                          'food_cravings', 'acne', 'sleep_problems']
+                    weights = [0.4, 0.35, 0.15, 0.1]
+                else:  # Earlier PMS
+                    available_symptoms = [
+                        'breast_tenderness', 'food_cravings', 'acne']
+                    weights = [0.5, 0.35, 0.15]
+            elif phase == 'f':
+                # Follicular: occasional symptoms
+                available_symptoms = ['headache', 'acne', 'sleep_problems']
+                weights = [0.4, 0.4, 0.2]
+            else:  # ovulation
+                available_symptoms = ['breast_tenderness', 'headache']
+                weights = [0.6, 0.4]
+
+            # Decide number of symptoms (smoother distribution)
+            num_symptoms_prob = np.random.random()
+            if num_symptoms_prob < 0.4:  # 40% single symptom
+                num_symptoms = 1
+            elif num_symptoms_prob < 0.7:  # 30% two symptoms
+                num_symptoms = 2
+            else:  # 30% three symptoms
+                num_symptoms = min(3, len(available_symptoms))
+
+            # Select symptoms
+            # Start with persistent ones
+            selected_symptoms = list(persistent_symptoms)
+
+            if len(selected_symptoms) < num_symptoms and available_symptoms:
+                remaining_needed = num_symptoms - len(selected_symptoms)
+                # Remove already selected from available
+                available_filtered = [
+                    s for s in available_symptoms if s not in selected_symptoms]
+
+                if available_filtered:
+                    if len(available_filtered) <= remaining_needed:
+                        selected_symptoms.extend(available_filtered)
+                    else:
+                        # Weighted selection for remaining symptoms
+                        filtered_weights = [weights[available_symptoms.index(s)]
+                                            for s in available_filtered if s in available_symptoms]
+                        if filtered_weights:
+                            # Normalize weights
+                            total_weight = sum(filtered_weights)
+                            filtered_weights = [
+                                w/total_weight for w in filtered_weights]
+
+                            new_symptoms = np.random.choice(available_filtered,
+                                                            size=min(remaining_needed, len(
+                                                                available_filtered)),
+                                                            replace=False, p=filtered_weights)
+                            selected_symptoms.extend(new_symptoms)
+
+            return ', '.join(selected_symptoms) if selected_symptoms else 'not_defined'
         else:
-            # 25% chance during other phases
-            if np.random.random() < 0.25:
-                # 50% chance of multiple symptoms even in other phases
-                if np.random.random() < 0.5:
-                    possible_symptoms = [
-                        s for s in symptoms_list if s != 'not_defined']
-                    num_symptoms = np.random.choice([2, 3], p=[0.8, 0.2])
-                    selected_symptoms = np.random.choice(possible_symptoms,
-                                                         size=min(num_symptoms, len(
-                                                             possible_symptoms)),
-                                                         replace=False)
-                    return ', '.join(selected_symptoms)
-                else:
-                    # Exclude 'not_defined'
-                    return np.random.choice(symptoms_list[:-1])
+            # Low symptom period - might still have persistent symptoms
+            if persistent_symptoms and np.random.random() < 0.3:
+                return ', '.join(persistent_symptoms)
             else:
                 return 'not_defined'
 
-    def generate_stress_level(self, mood: int) -> int:
-        """Generate stress level correlated with mood (75% correlation)"""
+    def generate_stress_level(self, mood: int, phase: str, cycle_day: int, cycle_length: int,
+                              prev_stress: int = None) -> int:
+        """Generate stress level correlated with mood and with smooth transitions"""
         if pd.isna(mood):
             return np.random.choice([-3, -2, -1, 0])
 
-        # 75% correlation with mood
+        # Base correlation with mood (75% correlation)
         if np.random.random() < 0.75:
-            # Correlated: bad mood = high stress
             if mood <= -1:
-                return np.random.choice([-3, -2], p=[0.6, 0.4])
+                base_stress = -2.5 + np.random.normal(0, 0.5)
             elif mood == 0:
-                return np.random.choice([-2, -1, 0], p=[0.2, 0.3, 0.5])
+                base_stress = -1.5 + np.random.normal(0, 0.8)
             else:  # mood >= 1
-                return np.random.choice([-1, 0], p=[0.3, 0.7])
+                base_stress = -0.5 + np.random.normal(0, 0.5)
         else:
-            # 25% random
-            return np.random.choice([-3, -2, -1, 0], p=[0.2, 0.3, 0.3, 0.2])
+            # 25% random stress regardless of mood
+            base_stress = np.random.uniform(-3, 0)
+
+        # Phase-specific stress modifiers
+        if phase == 'm':
+            base_stress -= 0.3  # Slightly more stress during menstruation
+        elif phase == 'l' and (cycle_length - cycle_day) <= 7:
+            base_stress -= 0.5  # More stress during PMS
+        elif phase == 'o':
+            base_stress += 0.3  # Less stress during ovulation
+
+        # Smooth transition from previous day
+        if prev_stress is not None:
+            transition_factor = 0.4
+            base_stress = transition_factor * prev_stress + \
+                (1 - transition_factor) * base_stress
+
+        # Add noise for longer cycles
+        if cycle_length > 35:
+            base_stress += np.random.normal(0, 0.3)
+
+        # Convert to discrete scale
+        stress_value = int(np.round(base_stress))
+        stress_value = max(-3, min(0, stress_value))
+
+        return stress_value
 
     def create_user_id(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create unique user IDs and forward-fill user characteristics"""
@@ -489,6 +615,11 @@ class CycleToDailyTransformer:
             cycle_length = int(cycle_length)
 
             # Create daily records for this cycle
+            prev_mood = None
+            prev_energy = None
+            prev_stress = None
+            prev_symptoms = None
+
             for day in range(1, cycle_length + 1):
                 # Calculate phase, preserving NaN when data is insufficient
                 phase = self.calculate_cycle_phase(
@@ -528,13 +659,23 @@ class CycleToDailyTransformer:
                         else:
                             daily_record[col] = str(value).strip()
 
-                # Generate psychological and physical data
+                # Generate psychological and physical data with smooth transitions
                 age = daily_record.get('Age', 25)  # Default age if missing
 
-                mood = self.generate_mood(phase, day, cycle_length, age)
-                energy = self.generate_energy(phase)
-                symptoms = self.generate_symptoms(phase, day, cycle_length)
-                stress = self.generate_stress_level(mood)
+                mood = self.generate_mood(
+                    phase, day, cycle_length, age, prev_mood)
+                energy = self.generate_energy(
+                    phase, day, cycle_length, prev_energy)
+                symptoms = self.generate_symptoms(
+                    phase, day, cycle_length, prev_symptoms)
+                stress = self.generate_stress_level(
+                    mood, phase, day, cycle_length, prev_stress)
+
+                # Store for next day's continuity
+                prev_mood = mood
+                prev_energy = energy
+                prev_stress = stress
+                prev_symptoms = symptoms
 
                 daily_record['mood'] = mood
                 daily_record['energy'] = energy
