@@ -129,7 +129,7 @@ MODEL_PICKLE_URL = f"{github_config.base_raw_url}/xgboost.pkl"
 # API URLs
 USERS_API_URL = f"{github_config.base_api_url}/users.csv"
 RECOMMENDATIONS_API_URL = f"{github_config.base_api_url}/recommendations.json"
-MODEL_API_URL = f"{github_config.base_api_url}/cycle_results.pkl"
+MODEL_API_URL = f"{github_config.base_api_url}/cycle_model.pkl"
 
 # ==================== CONFIGURATION VALIDATION ====================
 
@@ -225,17 +225,17 @@ def load_model():
         if response.status_code == 200:
             model_data = pickle.loads(response.content)
 
-            # Діагностика: перевіряємо що завантажилося
+            # Check what was loading
             if app_config.debug:
                 st.write(f"**Model type:** {type(model_data)}")
                 if isinstance(model_data, dict):
                     st.write(f"**Dict keys:** {list(model_data.keys())}")
 
-            # Перевіряємо чи це справжня ML модель
+            # Check if it's a model
             if hasattr(model_data, 'predict'):
                 return model_data
             elif isinstance(model_data, dict) and 'model' in model_data:
-                # Можливо модель в словнику під ключем 'model'
+                # May be a dict with model and metadata
                 return model_data['model']
             else:
                 if app_config.debug:
@@ -357,7 +357,6 @@ def calculate_cycle_day(last_period_date):
     """Calculate current cycle day based on last period date"""
     today = datetime.now().date()
     last_period = datetime.strptime(last_period_date, '%Y-%m-%d').date()
-    print((today - last_period).days + 1)
     return (today - last_period).days + 1
 
 
@@ -517,6 +516,14 @@ def main():
     if 'daily_entries' not in st.session_state:
         st.session_state.daily_entries = []
 
+    # New session state variables for registration
+    if 'registration_mode' not in st.session_state:
+        st.session_state.registration_mode = False
+    if 'new_user_login' not in st.session_state:
+        st.session_state.new_user_login = ""
+    if 'show_registration_form' not in st.session_state:
+        st.session_state.show_registration_form = False
+
     # Load data from private GitHub repository
     users_df = load_users_data()
     recommendations = load_recommendations()
@@ -528,69 +535,110 @@ def main():
         st.markdown(
             "Enter your unique login to access your cycle data or create a new profile.")
 
-        login = st.text_input("🆔 Enter your unique login:",
-                              placeholder="your_username")
+        # Show login input only if not in registration mode
+        if not st.session_state.registration_mode:
+            login = st.text_input(
+                "🆔 Enter your unique login:", placeholder="your_username")
 
-        if st.button("🔍 Check Login", type="primary"):
-            if login:
-                # Check if user exists in database
-                existing_user = users_df[users_df['login'] == login]
+            if st.button("🔍 Check Login", type="primary"):
+                if login:
+                    # Check if user exists in database
+                    existing_user = users_df[users_df['login'] == login]
 
-                if not existing_user.empty:
-                    # Existing user found
-                    st.session_state.user_login = login
-                    user_dict = existing_user.iloc[0].to_dict()
-                    # Handle entries field properly
-                    if 'entries' in user_dict and isinstance(user_dict['entries'], str):
-                        try:
-                            user_dict['entries'] = json.loads(
-                                user_dict['entries'])
-                        except:
-                            user_dict['entries'] = []
-                    st.session_state.user_data = user_dict
-                    st.success(f"Welcome back, {login}! Loading your data...")
-                    st.rerun()
+                    if not existing_user.empty:
+                        # Existing user found
+                        st.session_state.user_login = login
+                        user_dict = existing_user.iloc[0].to_dict()
+                        # Handle entries field properly
+                        if 'entries' in user_dict and isinstance(user_dict['entries'], str):
+                            try:
+                                user_dict['entries'] = json.loads(
+                                    user_dict['entries'])
+                            except:
+                                user_dict['entries'] = []
+                        st.session_state.user_data = user_dict
+                        st.success(
+                            f"Welcome back, {login}! Loading your data...")
+                        st.rerun()
+                    else:
+                        # New user - switch to registration mode
+                        st.session_state.registration_mode = True
+                        st.session_state.new_user_login = login
+                        st.session_state.show_registration_form = True
+                        st.info(
+                            "👤 New user detected! Please complete your profile setup.")
+                        st.rerun()
                 else:
-                    # New user - show registration form
-                    st.info(
-                        "👤 New user detected! Please complete your profile setup.")
+                    st.warning("⚠️ Please enter a login name!")
 
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        cycle_length = st.number_input(
-                            "📊 Typical cycle length (days):",
-                            min_value=app_config.min_cycle_length,
-                            max_value=app_config.max_cycle_length,
-                            value=app_config.default_cycle_length,
-                            help=f"Most cycles are between {app_config.min_cycle_length}-{app_config.max_cycle_length} days"
-                        )
+        # Show registration form if in registration mode
+        if st.session_state.registration_mode and st.session_state.show_registration_form:
+            st.markdown("---")
+            st.subheader(
+                f"📝 Create Profile for: **{st.session_state.new_user_login}**")
 
-                    with col2:
-                        last_period = st.date_input(
-                            "📅 Date of last menstruation:",
-                            max_value=datetime.now().date(),
-                            help="Select the first day of your last period"
-                        )
+            # Back button to return to login
+            if st.button("← Back to Login", type="secondary"):
+                st.session_state.registration_mode = False
+                st.session_state.new_user_login = ""
+                st.session_state.show_registration_form = False
+                st.rerun()
 
-                    if st.button("💾 Create Profile", type="primary"):
+            # Registration form using st.form to prevent resets
+            with st.form("registration_form"):
+                st.markdown("**Complete your cycle information:**")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    cycle_length = st.number_input(
+                        "📊 Typical cycle length (days):",
+                        min_value=app_config.min_cycle_length,
+                        max_value=app_config.max_cycle_length,
+                        value=app_config.default_cycle_length,
+                        help=f"Most cycles are between {app_config.min_cycle_length}-{app_config.max_cycle_length} days"
+                    )
+
+                with col2:
+                    last_period = st.date_input(
+                        "📅 Date of last menstruation:",
+                        max_value=datetime.now().date(),
+                        help="Select the first day of your last period"
+                    )
+
+                # Form submit button
+                submitted = st.form_submit_button(
+                    "💾 Create Profile", type="primary")
+
+                if submitted:
+                    # Validate inputs
+                    if cycle_length and last_period:
                         # Create new user profile
                         new_user_data = {
-                            'login': login,
+                            'login': st.session_state.new_user_login,
                             'cycle_length': cycle_length,
                             'last_period': last_period.strftime('%Y-%m-%d'),
                             'entries': []
                         }
-                        st.session_state.user_login = login
-                        st.session_state.user_data = new_user_data
 
                         # Save to GitHub
-                        if save_user_data(login, new_user_data):
+                        if save_user_data(st.session_state.new_user_login, new_user_data):
+                            # Successfully created profile
+                            st.session_state.user_login = st.session_state.new_user_login
+                            st.session_state.user_data = new_user_data
+
+                            # Reset registration state
+                            st.session_state.registration_mode = False
+                            st.session_state.new_user_login = ""
+                            st.session_state.show_registration_form = False
+
+                            st.success(
+                                "✅ Profile created successfully! Welcome to your cycle tracker!")
                             st.rerun()
                         else:
                             st.error(
-                                "Failed to save profile. Please try again.")
-            else:
-                st.warning("⚠️ Please enter a login name!")
+                                "❌ Failed to save profile. Please try again.")
+                    else:
+                        st.error("⚠️ Please fill in all required fields.")
 
     else:
         # User is logged in - main application interface
