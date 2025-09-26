@@ -1,0 +1,21 @@
+data:
+  synthetic_users: 10000
+  days_per_user: 365
+  cycle_length_mean: 28
+  cycle_length_std: 3
+
+model:
+  sequence_length: 60
+  prediction_horizon: 7
+  batch_size: 32
+  epochs: 100
+
+features:
+  temporal_features: true
+  biological_features: true
+  lifestyle_features: true
+
+training:
+  test_size: 0.2
+  validation_size: 0.2
+  random_state: 42

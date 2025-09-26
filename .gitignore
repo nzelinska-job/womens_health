@@ -4,42 +4,57 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
 
-# Data files
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
-data/synthetic/*
-!data/synthetic/.gitkeep
-
-# Models
-models/trained/*
-!models/trained/.gitkeep
-models/checkpoints/*
-!models/checkpoints/.gitkeep
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environment
+# Environment Variables
 .env
 .env.local
+.env.production
+
+# Streamlit Secrets
+.streamlit/secrets.toml
+
+.kaggle/kaggle.json
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Keys and credentials
-.kaggle/
+# Data files (if containing personal info)
+data/users.csv
+*.log
